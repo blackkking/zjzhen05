@@ -68,7 +68,7 @@ git remote add origin git@github.com:hubusername/reponame.git
 
 ```shell
 git push -u origin master
-#当第一次完成后你只要在本地作了提交，就可以推送到远程库上
+#当第一次完成后你只要在本地作了提交，就可以推送到远程库上，注意不能提交空库
 git push origin master
 ```
 
