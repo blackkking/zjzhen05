@@ -163,4 +163,8 @@ git config --global alias.co checkout
 
 可视化GitHub桌面版下载：
 
+https://download.csdn.net/download/zjzhen123/10293130
+
 git版本下载：
+
+https://download.csdn.net/download/zjzhen123/10293124
