@@ -45,7 +45,7 @@ git commit -m "remove test"
 ```shell
 #git 和 GitHub 之间是通过shh加密的
 #step1 创建SHHkey，在用户的目录下会有id_rsa.pub和id_rsa文件
-shh-keygen -t rsa -C "youremail@example.com" #一路回车，不用设置密码
+ssh-keygen -t rsa -C "youremail@example.com" #一路回车，不用设置密码
 #step2 登录GitHub，打开account setting "SSh Keys"页面，点击add
 在文本框中粘贴【id_rsa.pub】文件的内容
 ```
@@ -78,7 +78,7 @@ git push origin master
 - 克隆到本地
 
 ```shell
-git clone git@git.com::hubusername/reponame.git 
+git clone git@github.com::hubusername/reponame.git 
 ```
 
 ## 分支管理
