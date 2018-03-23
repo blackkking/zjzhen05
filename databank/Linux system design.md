@@ -45,4 +45,74 @@ Linux文件是对大多数系统资源访问的接口。
 - 文件的数据。它的存储位置由索引节点指定，有这些特殊文件，比如管道及设备文件。在硬盘上不具有数据区域。而普通文件和目录都拥有数据区域。
 
 
+#### 文件访问基本概念
 
+​	Linux提供了丰富的文件访问接口，如我们用opendir()等函数后去目录结构信息。通过调用stat()可以从索引节点获得文件信息。通过open(),read()等等访问文件的数据。
+
+​	Linux操作系统中各种类型的文件都采用统一的I/O方法来进行访问。从、因此，从磁盘中读取一个文件中的程序和从网络中读取数据的程序一样简单。
+
+​	对文件执行I/O 操作，有两种基本方式：一种是系统调用的I/O方法，另一种是基于流的I/O方法。
+
+​	系统调用的I/O方法提供了最基本的文件访问接口：open().close().write(),read()和lseek()等。基于流的I/O方法实际上是建立在系统调用的I/O方法基础上的C函数库，它基于系统调用方法的封装并增加了额外的功能。例如采用缓冲技术来提高程序的效率，输入解析以及格式化输出等。然而在处理设备，管道，网络套接字和其他特殊类型的文件的时候，必须使用系统调用I/O方法。
+
+​	系统调用和基于流的区别:
+
+​	1.基于流的文件函数名字都是以字母“f"开头
+
+​	2.系统调用是更低一级的接口，调用需要更多编码的工作
+
+​	3.系统调用直接处理文件描述符，流函数处理“FILE*”类型的文件句柄
+
+​	4.基于流的I/O 方法是对系统调用方法的封装，流I/O 方法使用自动缓冲技术，程序性能会更高
+
+​	5.基于流的方法支持格式化输出，类似于fprintf()这样的函数
+
+​	6.基于流的方法替用户处理有关系统调用的细节，比如系统调用被信号中断的处理等等
+
+​	基于流的方法会给我们带来极大的方便，但某些程序却不能使用流的I/O 方法。比如使用缓冲技术使得网络通信陷入困境，因为它会干扰网络通讯所使用的通信协议，考虑到这两种方法的不同，使用终端或者通过文件交换信息我们一般用流的I/O。而使用网络或管道通信时，通常采用系统调用的I/O方法
+
+#### 文件访问的系统调用的API
+
+```c
+//文件的创建，打开和关闭
+fd = open("/tmp/open_test",O_CREAT|O_WRONLY|O_TRUNC,0640);
+fd = creat("/tmp/open_test",0640);
+//原型
+int open(const char *pathname, int flags); //失败返回-1
+int open(const char *pathname, int flags, mode_t mode);
+int creat(const char *pathname, mode_t mode);
+int close(int fd);
+//保证数据写入磁盘等物理存储设备中
+int fsync(int fd);
+//文件的读写
+ssize_t read(int fd,void *buf,size_t count);
+ssize_t write(int fd, const void *buf, size_t count);
+//fd:要进行对鞋的文件描述符 buf： 要写入文件内容或读出文件内容的内存地址 count: 要读写的字节数
+//lseek()系统调用可以使文件指针移动到文件中的指定位置
+off_t lseek(int fd,off_t offset,int whence);
+/*fd 文件描述符 offset:移动的偏移量，单位的字节数 whence:文件指针移动偏移量的解释。有三个选项：
+SEEK_SET:从文件头开始计算，文件指针移动到offset个字节位置
+SEEK_CUR:从文件指针当前位置开始计算，向后移动offset个字节的位置
+SEEK_END:文件指针移动到文件结尾
+lseek()移动成功，返回为文件指针当前位置 失败返回-1*/
+//access()用来判断文件是否有读写等权限
+int access(const char *pathname,int mode);
+R_OK是否有可读权限  W_OK写权限  X_OK执行  F_OK是否存在
+//存在返回0 不存在返回-1
+
+ //修改文件属性
+ int fnctl(int fd,int cmd);
+ int fnctl(int fd,int cmd,lont arg);
+ int fnctl(int fd,int cmd,struct flock *lock);
+/*复制一个文件描述符(cmd = F_DUPFD)。
+获取/设置文件描述符标志(cmd = F_GETFD 或 cmd = F_SETFD)。
+获取/设置文件状态标志(cmd = F_GETFL 或 cmd = F_SETFL)。 获取/设置文件锁(cmd = F_GETLK、 cmd = F_SETLK 或 cmd = F_SETLKW)。*/
+
+
+```
+
+
+
+​	
+
+​	
