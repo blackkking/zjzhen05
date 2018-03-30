@@ -108,11 +108,69 @@ R_OK是否有可读权限  W_OK写权限  X_OK执行  F_OK是否存在
 获取/设置文件描述符标志(cmd = F_GETFD 或 cmd = F_SETFD)。
 获取/设置文件状态标志(cmd = F_GETFL 或 cmd = F_SETFL)。 获取/设置文件锁(cmd = F_GETLK、 cmd = F_SETLK 或 cmd = F_SETLKW)。*/
 
+```
+
+#### 文件访问的C库函数
+
+```c
+//文件创建，打开和关闭
+FILE *fopen(const char *path,const char* mode);
+// w写 w+读写 r读 r+读写 a追加 a+清空再追加 成功返回文件句柄，失败返回NULL
+int fclose(FILE *fp);
+//按字符读文件
+int fgetc(FILE* stream);
+int getc(FILE* stream);
+fgetc()用 unsigned char 的格式来读取一个字符并映射为一个 int 值，如果读取正确，返回读取的字符的 int 值；否则，当读取错误或遇到文件结束标志 EOF 时，返回 EOF， EOF在头文件的定义为-1.
+//getc 是fgetc的宏定义别名
+//按字符写文件
+int fputc(int c,FILE* stream);
+int putc(int c,FILE* stream);
+第一个参数是要写入的字符，成功返回字符的值，失败赶回EOF
+//按字符串读文件
+char *fgets(char *s, int size, FILE *stream);
+fgets()函数从文件中读入一行以“\0”或 EOF 结尾的字符串。 
+第一个参数是存放读出来的字符串的地址，第二个参数指定了一次最多读取 n 个字符，第三个参数指定了文件句柄。fgets()函数将从文件偏移指针的当前位置依次读取字符存入字符串指针 s 中。函数读取字符直至 n-1 个字符或遇到换行符或文件结束标志 EOF 为止。
+//成功返回s 失败返回NULL
+//字符串写入文件
+int fputs(const char *s, FILE *stream); 
+//成功返回非负数，失败返回EOF
 
 ```
 
+```c
+//按数据块读写文件
+对于非文本文件， 比如二进制文件等， 当需要一次读写一组数据的时候， 我们可以使用 fread()和 fwrite()函数来读写文件。
+size_t fread(void *ptr, size_t size， size_t nmemb， FILE *stream);
+size_t fwrite(const void *ptr, size_t size， size_t nmemb， FILE *stream);
+第一个参数分别是要读写的数据的地址，第二个参数是数据块的大小，第三个参数是要读写的数据块的数目，第四个参数是文件句柄。
+//当读写操作成功时，函数返回成功读写的数据块的数量。如果返回的数量小于第三个参数指定的读写数量时，表明发生了错误或者读文件遇到了文件结束符 EOF。这种情况下，fread()无法区分读数据时是出错还是遇到文件结束符，通常可以使用 feof()函数来判断是否读到了文件尾，或者用 ferror()函数来判断是否是读文件出错。
+
+//格式化写入，成功写入返回字符数，错误返回负数
+int fprintf(FILE *stream， const char *format， ...);
+//格式化输出，成功写入返回字符数，错误返回负数
+int fscanf(FILE *stream， const char *format， ...);
+
+//文件的随机存取
+int fseek(FILE *stream， long off'set， int whence);
+whence：文件指针移动偏移量的解释，有三个选项：SEEK_END，SEEK_CUR，从当前偏移。SEEK_SET，从文件头开始移动
+//告诉指针当前位置
+long ftell(FILE *stream);
+```
+
+## 进程和线程
+
+### 什么是进程
+
+进程的标准定义是：“进程是一个具有独立功能的程序关于某个数据集合的一次可以并发执行的运行活动，是处于活动状态的计算机程序”。 
+
+#### 进程的结构
+
+Linux 是一个多处理操作系统。进程具有独立的权限与职责。如果系统中某个进程崩溃，
+
+Linux 是一个多处理操作系统。进程具有独立的权限与职责。如果系统中某个进程崩溃，
+它不会影响到其余的进程。每个进程运行在其各自的虚拟地址空间中， 进程之间可以通过由
+
+Linux 是一个多处理操作系统。进程具有独立的权限与职责。如果系统中某个进程崩溃，它不会影响到其余的进程。每个进程运行在其各自的虚拟地址空间中， 进程之间可以通过由内核控制的机制相互通讯。 
 
 
-​	
 
-​	
