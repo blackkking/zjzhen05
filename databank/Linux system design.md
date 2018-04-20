@@ -1847,40 +1847,318 @@ struct sockaddr {
 
 sockaddr 结构的 sa_data 域的定义并不明确。 它只是被定义为 l4 字节的数组，SOCK_MAXADDRLEN 宏暗示内容可能超过 l4 字节。这种不确定性是经过深思熟虑的。 SocketAPI 是个非常强大的接口，它能处理多种多样网络层地址族，这包括我们常常提到的 IPv4、IPv6、 IPX。
 
+Socket API 为了能够传递繁多的地址族结构，它使用通用地址结构类型 sockaddr 作为地址参数类型，在该类型的前面包含了所有地址结构共有的 16bits 域来存放地址族类型(它是主机字节序的，用来表明该结构的地址族类型，如 AF_INET， AF_UNIX 等等)， Socket API会根据这个域判断如何对待结构的后续数据。这也就是说，我们不会真的用到 sockaddr 结构，我们需要填写真正的与地址族相关的地址结构，然后在传递给需要地址结构的函数时，把指向该结构的指针转换成 sockaddr 结构类型的指针传递进去。例如，当我们要使用 IPv4地址族，此时需要填写的是 sockaddr_in 结构类型，我们把 sockaddr_in 的 sin_family 域设定为 AF_INET，然后把 sockaddr_in 结构的地址传递给需要 sockaddr 结构指针参数的函数。
 
+#### IPv4地址族结构
 
+IPv4是如今最通用的网络层协议，所以它对应的地址结构被称为“网络套接字地址结构”，以sockaddr_in命名
 
+```c
+//IPv4 地址族结构定义
+#include<netinet/in.h>
+struct in_addr{
+	in_addr_t s_addr;
+};
+struct sockaddr_in {
+    uint16_t sin_family;
+    uint16_t sin_port;
+    struct in_addr sin_addr;
+    char sin_zero[8];
+};
+/*sin_family 是一个 16 位的无符号整数，它需要填写主机字节序的地址结构类型(如AF_INET)。
+  sin_port 为 l6 位无符号整数值，这个域用来存放网络字节序的端口号。
+  sin_addr 用来存放 IPv4 地址，地址值为网络字节序。 		  sin_addr 由于历史原因被声明为in_addr 结构类型，但它实际上只包含一个名为 s_addr 的 32 位无符号整数值，这个类
+型定义在 netinet/in.h 之中*/
 
+//假设远程的主机地址是192.168.2.1 端口号3001，现在我们尝试填充它
+struct sockaddr_in sin;
+memset(&sin,0,sizeof(sin));
+sin.sin_port = hons(3001);
+sin.sin_addr.s_addr = htonl(0x0a80201);//192.168.2.1
+//sin_family 需要填充正确的地址族类型 AF_INET。
+```
 
+0xc0a80201 是地址 192.168.2.1 的 IPv4 地址值， 我们需要把它转换成网络字节序， 但这么做很麻烦， 我们需要自己计算 32 位的地址值。幸好 Socket API 已经定义了转换字符串至 IP 地址值的函数， 函数原型如下：
 
+```c
+#include<sys/types.h>
+#include<sys/socket.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
 
+int inet_aton(const char* strptr,struct in_addr *addrptr);
+in_addr_t inet_addr(const char *strptr);
+char *inet_ntoa(struct in_addr in);
+const char *inet_ntop(int af,const void* restrict src,char *restrict dst,socklen_t size);
+//第一个函数 inet_aton()将 strptr 指向的字符串转换成网络字节序的 32 位的 IPv4 地址， 并通过指针 addrptr 来存储转换后的结果， 如果转换成功返回 1， 否则返回 0。
+/*inet_addr()执行和 inet_aton()相同的转换， 返回值是网络字节序的 IPv4 地址， 这个函数存在一个严重的问题， 因为 IPv4 地址是 32 位的， 也就说明所有 32 位无符号整数能表示的数字都是有效的地址(Ox00000000 到 0xffffffff 的 32 位整数对应地址 0.0.0.0 到255.255.255.255)， 在 inet_addr 的相关文档中提到， 如果 inet addr()执行出错， 它将返回 INADDR_NONE 表示错误，这个值在绝大多数操作系统中被定义为一 1(补码为0xffffffff)，这也同时说明 inet add()不能处理 255.255.255.255(值为 0xffffffff)这个受限广播地址。
+函数 inet_ntoa()将一个网络字节序的 IPv4 地址转换成字符串，并将字符串作为返回值返回。用于保存返回值的字符串驻留在静态内存中，这意味着这个函数是不可重入的，也就是说我们把它用在并发操作(线程或 vfork())函数中要非常小心。*/
+```
 
+以上三个函数或多或少都存在问题，我们并不推荐使用，下面将着重介绍两个用于同样目地的转换函数，它们不仅可以用于转换 IPv4 地址，还可以用来转换 IPv6 的地址。
 
+```c
+int inet_pton(int af,const char* restrict src,void *restrict dst);
+//inet_ntop()把网络字节序的 ip 地址 src 转换成字符串保存在 dst 中作为返回值返回，参数 size 为 dst 所包含的字节数。
+//inet_pton()把字符串 src 转换成 ip 地址保存在 dst 中。该函数调用成功返回大于 0的整数。
+//inet_ntop()和 inet_pton()有个共有的地址族参数 af， 如果我们要转换 IPv4 的地址，这里需要填写 AF_INET
+//假设远程的主机地址是192.168.2.1 端口号3001，现在我们尝试填充它
+#include <sys/types.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+# include <arpa/inet.h>
+struct sockaddr_in sin;
+char buf[16];
+memset(&sin,0,sizeof(sin));
+sin.sin_family=AF_INET;
+sin.sin_port=htons(3001);
+if(inet_pton(AF_INET,"192.168.2.1",&sin.sin_addr.s_addr)<=0)
+{
+  //错误处理
+}
+printf("%s\n",inet_ntop(AF_INET,&sin.sin_addr.s_addr,buf,sizeof(buf)));
+```
 
+上例中我们首先把端口号 3001 用 htons()变成网络字节序并填充地址族结构的sin_port 域， 然后调用 inet_pton()将字符串表述的 IPv4 地址转换成协议族大端字节序地址。最后， 我们调用 inet_ntop()再将它转换成字符串表述的 IPv4 地址， 并调用 printf 输出它，在调用 inet_ntop 的时候，我们必须给它传递一个用于保存结果的缓冲区，我们在栈中分配 l6 字节的数组 buf,之所以这么做的原因是因为 16 字节足够存储一个字符串表示点分 lPv4 的地址。
 
+#### 域名解析
 
+```c
+//域名不能直接传送给任何 Socket API 函数，解析器库(Resolver library)包含了域名解析函数，它将域名转换成网络字节序的协议地址：
+#include<netdb.h>
+struct hostent{
+  char *h_name;
+  char *h_aliases;
+  int h_addrtype;
+  int h_length;
+  char **h_addr_list;
+};
+#define h_addr h_addr_list[0]
+struct hostent *gethostbyname(const char *hostname);
+extern int h_errno;
+char *hstrerror(int err);
+/*hostent 结构体成员：
+h_name 被称为主机的正式(canonical)名(例如 www.google.cn 的正式主机名是cn.l.google.com)。
+h_aliases 是主机的别名列表， 有的主机可能有几个别名(www.google.cn 就是 google他自己的别名)。
+h_addrtype 表示的是主机地址族的类型， AF_INET 或 AF_INET6。
+h_length 表示返回地址的长度，如果返回的是 IPv4 地址，这个长度为 4。
+h_addr_list 返回主机的地址列表，以网络字节序存储*/
+//gethostbyname()根据配置文件(/etc/resolv.conf)里的 DNS 主机列表向 DNS 服务器发送 UDP 的查询或通过查找本地静态主机文件/etc/hosts 来实现域名解析。参数 hostname 是一个包含主机域名的字符串(如“www.google.cn”)或包含 IPv4 地址的字符串(如“l92.168.2.1”)。
+//当 gethostbyname()成功执行将返回非空的 hostent 结构地址， 失败则返回空指针， 并用错误码设置全局变量 h_errno， 可以通过调用 hstrerror()并传递 h_errno 作为参数取得错误描述信息
+```
 
+```c
+//域名解析程序
+#include <stdio.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 
+int main(int argc,char **argv)
+{
+  char **pptr;
+  char str[46];
+  struct hostent *hptr;
+  if(argc<2)
+  {
+  	fprintf(stderr,"usage:domain<domain>\n");
+    return -1;
+  }
+  if((hptr = gethostbyname(argv[1])) == NULL)
+   {
+  		fprintf(stderr,"gethostbyname call failed.%s\n",hstrerror(h_errno));
+    	return -1;
+    }
+  	printf("offical name:%s\n",hptr->h_name);
+  	for(pptr = hptr->h_aliases;*pptr != NULL; pptr++)
+    {
+  		printf("\t alias:%s\n",*pptr);
+	}
+  	if(hptr->h_addtype != AF_INET)
+    {
+      fprintf(stderr,"Invalid address type %d\n",hptr->h_addrtype);
+      	return -1;
+	}
+  pptr = hptr->h_addr_list;
+  for(;*pptr != NULL;pptr ++)
+  {
+  	printf("\t address: %s\n",inet_ntop(hptr->h_addrtype,*pptr,str,sizeof(str)));
+  }
+  return 0;
+}
+```
 
+#### 建立套接字
 
+```c
+#include<sys/socket.h>
+int socket(int domain, int type, int protocol);
+//成功返回非负套接字，失败返回-1
+/*参数数 domain 告诉系统你需要使用什么地址协议族，他们都是用 AF_或 P_ 开头的数字常量宏定义，地址族的声明在 sys/socket.h 中，如 AF_INET 适用于地址族(IPv4)。
+参数 type 有五个定义好的值，也在 sys/socket.h 中。这些值都以“SOCK_” 开头。其中最通用的是 SOCK_STREAM，它告诉系统你需要一个可靠的流传送服务，当使用 AF_INET 和SOCK_STREAM 作为参数调用 socket()将指明创建一个使用 TCP 协议的套接字。如果指定SOCK_DGRAM，则将请求一个无连接报文传送服务(如 UDP)。如果你需要存取原始套接字，你就需要指定 SOCK_RAW。*/
+//protocol 参数可以指定一个更精确的协议(如 IPPROTO_TCP 对应与 TCP 协议)，它取决于前两个参数，而且并非总是有意义，多数时候可以不关心它，在大多数情况下可以传递 0，系统会根据前两个参数为我们选择一个合适的协议族。
+```
 
+#### 连接远程主机(connect )
 
+动请求连接是客户端的动作， TCP/IP 客户端通常要调用 connect()去连接一个服务端
 
+```c
+#include<sys/types.h>
+#include<sys/socket.h>
+int connect(int sockfd, struct sockaddr *serv_addr, int addrlen);
+//成功返回0，失败返回-1并将错误码代存放于全局变量 errno 之中。
+//参数 sockfd 是成功调用 socket()返回的套接字。
+//参数 serv_addr 形式上是一个指向 sockaddr 的指针，而实际上需要传递的是特定地址族的地址结构(如 struct sockaddr_in)的地址
+//参数 addrlen 表示第二个参数的字节数(如 sizeof(struct sockaddr_in))。
+```
 
+调用connect()函数会引发一次三次握手过程(发送 SYN)。等待连接建立后（三次握手完成)或出错才返回。在连接的起始阶段套接字层首先会为我们找到一个空闲的端口号，并根据服务器地址查询路由表选择一个本地 IP 地址，在连接完成后将使用这个地址和端口与服务器通讯。  
 
+有些可能导致 connect()失败的原因。例如，指定 IP 地址的主机可能不存在，没有到指定主机的路由，远程服务器端未启动，或者指定端口在远程服务器上并未启动监听等等，出错原因可以使用 perror()函数来输出错误信息。 
 
+#### 关闭套接字
 
+```c
+#include<unistd.h>
+int close(int sockfd);
+```
 
+其中，参数 sockfd 可以是打开的任何类型的文件描述字，包括套接字。close()调用成功返回 0， 失败返回-1，并用出错代码设置 errno。
 
+通常情况下(指末使用 SO_LINGER 套接字选项修改 close()的行为)对一个已连接套接字成功调用 close()。 它表示套接字缓冲区中的数据发送给对方的 TCP 层并成功执行 TCP 关闭连接的 4 个过程， close()要等待关闭过程完成才返回。 
 
+有个例外：当我们对一个已打开的文件描述字或套接字调用 dup()进行复制， 或进程调用 fork()时，系统会增加套接字的引用计数器。当套接字的引用计数器大于 1 时，它并不关闭连接，而是简单的递减套接字引用计数器后直接返回。 
 
+当调用 shutdown()关闭写操作时(SHUT_WR)，系统将不顾套接字引用计数而直接引发 TCP 连接关闭过程 
 
+```c
+#include<sys/socket.h>
+int shutdown(int sockfd,int howto);
+/*howto的三个取值
+SHUT_RD 关闭连接的读一半，进程不能接收套接字缓冲区中的未读数据，且留在套接字缓冲区中的数据将作废。进程不能再对套接字调用 read()读取数据。在调用 shutdown()后， TCP 套接字在接收到数据时仍然发送 ACK 进行确认，但数据都被丢弃掉
+SHUT_WR 关闭连接的写这一半。我们称之为 TCP 的半关闭(half-close)状态，程序不能再对该套接字进行写操作，当前套接字缓冲区中的已有数据都将被发送出去，在数据发送完毕后，将发送 TCP 的关闭序列(FIN)。这个操作不管套接字的引用计数而直接引发 TCP 关闭。
+SHUT_RDWR 关闭连接读和写，这等效于调用 shutdown()两次，第一次调用时使用 SHUT_RD参数，第二次使用 SHUT_WR 参数。 shutdown()调用成功返回 0，失败返回-1，并用出错代码设置 errno。*/
+```
 
+#### Socket I/O
 
+对于套接字的 I/O(读写)有很多 API 可用，如 send()、 recv()、 readv()、 writev()、sendmsg()、 recvmsg()、 sendto()、 recvfrom()、 read()、 write()等等。 
 
+```c
+#include<unistd.h>
+int read(int sockfd, void *buf, size_t nbytes);
+int write(int sockfd, void *buf, size_t nbytes);
+//而这个 read()函数将返回读入的字节数，返回 0 表示套接字已关闭， 出错返回-1 并设置 errno。
+//write()函数将成功返回写入的字节数，出错返回-1 并设置 errno，向一个已关闭套接字多次调用 write()将引发 SIGPIPE 信号。
+```
 
+我们曾经学过，一个文件描述字的 I/O 可以是阻塞或非阻塞的方式(通过调用对 fcntl()设置 0_NONBLOCK 选项或调用 ioctl()对文件描述字设置 FIONBIO)，这对于套接字也同样适用，默认时套接字为阻塞方式，此时 read()和 write()会阻塞在 I/O 操作上， 直至以下几种情况发生才会返回：
 
+- 有数据到来或写出的数据被对方TCP层确认才返回
+- 套接字出错，如 TCP 超时或收到了 RST， read()和 write()返到-1。 
+- 套接字关闭， read()调用返回 0， write()调用返回-1。 
+- 阻塞时受到了信号，read()和 write()调用返回-1，并设置 errno 为 EINTR。 
 
+```c
+//下面是 ECHO 客户端代码(它接收用户输入发送给服务器端的 2029 端口，接收服务器端的响应并将它显示给用户)
+#ifndef _MYNET_H
+#define _MYNET_H
 
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <string.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+#include <errno.h>
 
+#define RET_OK 0
+#define RET_ERR -1
 
+#define LISTEN_QUEUE_NUM 5
+#define BUFFER_SIZE 256
+#define ECHO_PORT 2029
+
+#endif
+```
+
+```c
+//client.c
+#include "mynet.h"
+
+int main(int argc,char **argv)
+{
+  int sockfd,ret = RET_OK;
+  structe sockaddr_in servaddr;
+  struct hostent *server;
+  
+  char buffer[BUFFER_SIZE];
+  
+  if(argc<2){
+  	fprintf(stderr,"usage %s hostname\n",argv[0]);
+    return RET_ERR;
+  }
+  
+  if(server = gethostbyname(argv[1]) == NULL)
+  {
+  	herror("gethostbyname.");
+    return RET_ERR;
+  }
+  
+  if((sockfd = socket(AF_INET,SOCK_STREAM,0))<0)
+  {
+  	perror("ERROR opening socket");
+    return RET_ERR;
+  }
+  memset(&servaddr,0,sizeof(servaddr));
+  servaddr.sin_family = AF_INET;
+  servaddr.sin_addr.s_addr = *(uint32_t *)server->h_addr;
+  servaddr.sin_port = htons((uint16_t)ECHO_PORT);
+  
+  if((ret = connect(sockfd,(struct sockaddr*)&servaddr,sizeof(servaddr)))<0)
+  {
+  	perror("ERROR connecting");
+    goto failed;
+  }
+  while(1)
+  {
+  	printf("Enter the message:");
+    if(fgets(buffer,sizeof(buffer)-1,stdin)==NULL)
+    {
+      	break;
+	}
+    if((ret = write(sockfd,buffer,strlen(buffer)))<0)
+    {
+  		perror("ERROR writing to socket");
+      	break;
+    }
+    if((ret = read(sockfd,buffer,sizeof(buffer)-1))<0)
+    {
+  		perror("ERROR reading from socket");
+      	break;
+    }
+    if(ret == 0)
+    {
+  		printf("Server disconnect\n");
+      	break;
+    }
+    buffer[ret] = 0;
+    printf("Server echo message:%s\n",buffer);
+  }
+failed:
+  close(sockfd);
+  return ret<0?RET_ERR : RET_OK;
+}
+```
+
+#### 给本地套接字赋予地址和端口(bind)
+
+服务器端和客户端不同，它并不调用 connect()主动连接其他主机，而是监听本地端口和地址被动的等待客户端的连接请求。另外，服务器端程序不同于客户端程序，他不能依赖 TCP 为我们选择的空闲端口(客户端也可以调用 bind()为自己指定一个本地端口和本地地址，但很少这么做)， 而是需要明确指出要监听的端口号，这样才能让客户端连接服务器。通常需要调用bind()函数为套接字捆绑本地端口和地址。
