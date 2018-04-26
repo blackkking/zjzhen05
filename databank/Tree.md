@@ -177,7 +177,6 @@ void  PostOrder(BiTree root)
 	    Visit(root ->data);       /*访问根结点*/
 	}
 } 
-
 ```
 
 #### 基于栈的递归消除
@@ -185,6 +184,29 @@ void  PostOrder(BiTree root)
 在大量复杂的情况下，递归的问题无法直接转换成循环，需要采用工作栈消除递归。工作栈提供一种控制结构，当递归算法进层时需要将信息保留；当递归算法出层时需要从栈区退出信息。
 
 ```c
+//中序遍历二叉树的非递归算法(直接实现栈操作)
+//s[m]表示栈,top表示栈顶指针
+void inorder(BiTree root) //中序遍历二叉树，bt为二叉树的根结点
+{
+  top=0;p=bt
+  do{
+  		while(p!=NULL)
+        {
+  			if(top>m)return('overflow');
+          	top=top+1;
+          	s[top]=p;
+          	p=p->Lchild
+		};//遍历左子树
+    	if(top!=0)
+        {
+  			p=s[top];
+          	top=top-1;
+          	Visit(p->data); //访问根结点
+          	p=p->Rchild; //遍历右子树
+		}
+	}while(p!=NULL||top!=0)
+} 
+
 //中序遍历二叉树的非递归算法（调用栈操作的函数）
 //首先应用递归进层的三件事与递归退层的三件事的原则,直接先给出中序遍历二叉树的非递归算法基本实现思路。 
 void InOrder(BiTree root) //中序遍历二叉树的非递归算法 
@@ -203,6 +225,56 @@ void InOrder(BiTree root) //中序遍历二叉树的非递归算法
       Visit(p->data);
       p=p->RChild;
 	}
+  }
+}
+
+//后序遍历的二叉树的非递归算法
+void PostOrder(BiTree root)
+{
+  BiTNode* p,*q; BiTNode **S;
+  int top=0;q=NULL;p=root;
+  S=(BiTNode**)malloc(sizeof(BiTNode*)*NUM);
+  //NUM为预定义的常数
+  while(p!=NULL||top!=0)
+  {
+  	while(p!=NULL)
+    {
+  		top++;
+      	s[top]=p;
+      	p=p->LChild; //左子树遍历
+	}
+    if(top>0)
+    {
+  		p=s[top];
+      	if((p->RChild==NULL)||(p->RChild==q))
+        {
+  			visit(p->data); //访问根结点
+          	q=p; //保存到q,为下一次已处理结点前驱
+          	top--;
+          	p=NULL;
+		}esle{
+  			p=p->RChild;
+		}
+	}
+  }
+  free(s);
+}
+```
+
+#### 遍历算法应用
+
+二叉树的遍历运算是一个重要的基础。在实际应用中，一是重点理解访问根结点操作的含义，二是注意对具体的实现问题是否需要考虑遍历的次序的问题
+
+```c
+//先序遍历输出二叉树中的结点输出二叉树中的叶子结点
+void PreOrder(BiTree root)
+{
+  if(root!=NULL)
+  {
+  	if(root->LChild == NULL && root->RChild == NULL)
+    printf(root->data);
+    PreOrder(root->LChild);
+    ProOrder(root->Rchild);
   }
 }
 ```
