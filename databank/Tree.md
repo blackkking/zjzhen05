@@ -671,4 +671,475 @@ node_t *min(node_t *x)
 
 ##### 前驱和后继
 
-前驱和后继的定义来源二叉树中序遍历的key序列。我们知道二叉的中序遍历的key序列是一个升序序列。在二叉查找树中，对
+前驱和后继的定义来源二叉树中序遍历的key序列。我们知道二叉的中序遍历的key序列是一个升序序列。在二叉查找树中，对于结点x,如果有结点y,满足y.key>x.key并且y是这些结点中key最小的，那么y就称之为x的后继。同理，在二叉查找树中，对于结点x，如果有结点y，满足y.key<x.key并且y是这些结点中key最大的，那么y就称之为x的前驱。在二叉查找树中，如果x是y的前驱，那么y就是x的后继。
+
+对于某个结点y它的后继的位置：如果y的右子树存在，那么后继是y的右子树中key最小的结点；如果y的右子树不存在，那么我们只要找到哪个结点的前驱是y，那么那个结点就是y的后继。
+
+```c
+node_t *successor(node_t *x)
+{
+  node_t *y;
+  if(x->r != NIL){
+  	y=min(x->y);
+  }else{
+  	y=x->p;
+    while((y != NIL)&&(y->r == x))
+    {
+  		x = y;
+      	y = x->p;
+    }
+  }
+  return y;
+}
+
+node_t *predecessor(node_t *x)
+{
+  node_t *y;
+  if(x->l != NIL){
+  	y = max(x->l);
+  }else{
+  	y = x->p;
+    while(( y != NIL)&&(y->l == x)){
+  		x=y;
+      	y=x->p;
+	}
+  }
+  return y;
+}
+```
+
+根据前驱和后继的定义，我们知道通过对树中最小值一直沿着后继直到结束，这样的序列就是中序遍历的序列。下面给出中序遍历的代码：
+
+```c
+void inorder(tree_t *T,void (*visit)(node_t *))
+{
+  node_t *x;
+  x = T->root;
+  if(x == NIL){
+  	x = min(x);
+    while(x != NIL){
+  		visit(x);
+      	x = successor(x);
+   }
+  }
+  return;
+}
+```
+
+##### 插入
+
+对二叉查找树的插入，不能破坏二叉查找树的性质，那么我们要结点插入到什么地方呢，答案是叶子，新插入的结点，都是成为某个叶子结点的左孩子或者右孩子。
+
+```c
+int insert(tree_t *T,node_t *z)
+{
+  node_t *x,*y;
+  x = T->root;
+  y = x;
+  while(x != NIL){
+  	y = x;
+    if(z->k == x->k){
+  		return 1;
+	}
+    if(z->k < x->k){
+  		x=x->l;
+	}else{
+  		x=x->r;
+	}  
+  }
+  init(z);
+  if(y == NIL){
+  	T->root = z;
+  }else{
+  	if(z->k < y->k){
+  		y->l = z;
+    }else{
+  		y->r = z;
+	}
+    z->p = y;
+  }
+  return 0;
+}
+```
+
+我们发现insert与search方法是一样的，只不过search是查找特定的key，而insert是查找合适的叶子结点的位置，它的运行时间为O(n)。
+
+##### 删除
+
+在介绍删除二叉查找算法之前，我们先来介绍一个辅助函数transplant,这个函数有3个参数，在树T中，将v替换u的位置，即u的双亲变成v的双亲，v替换u成为u双亲的孩子。另外一个辅助函数replace,这个函数有3个参数，在树T中，将v完成代替u，即u的双亲变成v的双亲，v替换u成为u双亲的孩子，另外左右孩子均为u的孩子。
+
+```c
+void _transplant(tree_t *T,node_t *u,node_t *v)
+{
+  if(u->p == NIL)
+  {
+  	T->root = v;
+  }else{
+  	if(u->p->l == u){
+  		u->p->l = v;
+	}else{
+  		u->p->r = v;
+	}
+  }
+  if(v != NIL){
+ 	v->p = u->p; 
+  }
+  return;
+}
+```
+
+假设z是待删除的结点，那么z可能有几种情况：
+
+- z没有右孩子——我们只需要将左孩子替换z在树中位置就能完成删除操作，也可以拿z的前驱替换
+- z有右孩子：z的右孩子没有左孩子——找到z的后继然后替换z.因为z的key小于右子树所有的key(假设没有重复的key)，那么z的后继就是右子树上的最小key.z的后继是z的右孩子，那么调用transplant(T,z,y).另外，要连接上原来z的左子树；
+- z有右孩子：z的右孩子有左孩子——找到z的后继然后替换z.因为z的key小于右子树所有的key(假设没有重复的key)，z的后继也有可能不是z的右孩子，首先我们调用transplant(T,y,y->r)，这时候y已经从树中脱离了，然后我们将y嫁接到z的右孩子的双亲上，这样y就成了z右孩子的双亲了，这和上面一种情况相同
+
+```c
+int remove(tree_t *T,node_t *z)
+{
+  do{
+  	node_t *y;
+    if(z->r == NIL){
+  		_transplant(T,z,z->l);
+      	break;
+	}
+    y=min(z->r);
+    if(y != z->r){
+  		_transplant(T,y,y->r);
+      	y->r = z->r;
+      	y->r->p = y;
+	}
+    _transplant(T,z,y);
+    y->l = z->l;
+    if(z->l != NIL){
+  		z->l->p = y;
+	}
+  }while(0);
+  return 0;
+}
+```
+
+### 红黑树
+
+在高度为h的二叉查找树上，我们实现的动态集基本操作:min，max，successor，predecessor，search，insert和delete的运行时间都是O(h)。树的高度决定查找效率。如果我们通过某种方法可以将二叉树尽可能的低，那么二叉树的查找效率将会大大的提高。
+
+对于一个含有n结点的最坏情况是这n个结点形成一个单链，那么二叉查找树的树高为n,允许时间为O(n);最好的情况是形成了一颗完全二叉树。那么h介于log2(n) 与log2(n)+1之间，运行时间为O(log2(n))。它的效率可以说是极高的。
+
+#### 基本概念
+
+如果我们把二叉查找树的每个结点都涂上红色或者黑色。如果他满足下面的5个性质，那么我们就称它为红黑树(RED BLACK TREE):
+
+- 每个结点不是红色就是黑色
+- 根结点是黑色
+- 每个叶子结点(NIL)都是黑色的
+- 如果一个结点是红色的，那么它所有的孩子都是黑色的
+- 对于每一个结点，从当前结点到后代的叶子的路径上包含黑色结点的数量是相同的。
+
+根据红黑树的性质，我们可以得到下面的结论：具有n内部结点的红黑树的高度最高位2log2(n+1).
+
+在证明这个结论之前，我们来看看红黑树的表示。每个结点到叶子结点（NIL）经过的黑色结点的个数（包括自已）称之为**黑高度**(black-height)。我们把NIL称之为**外部结点**，那些带有key的“合法”的结点称之为**内部结点**。
+
+红黑树的搜索运行时间为O(2log2(n+1))也就是O(log2(n))
+
+为了方便操作，我们引入一个NIL结点，这个NIL结点是跟普通的结点一样，不过我们只使用color这个域，因为NIL结点是黑色的。
+
+```c
+typedef struct rbnode_s rbnode_t;
+typedef struct rbtree_s rbtree_t;
+
+#define RBT_RED 0
+#define RBT_BLACK 1
+
+#define rbt_init(T)
+	(T)->root = &((T)->nil);
+	(T)->nil.c = RBT_BLACK
+
+struct rbnode_s {
+	int	k;	//key
+  	int c;	//color
+  	rbnode_t *p;	//parent
+  	rbnode_t *l;	//left
+  	rbnode_t *r;   //right 
+};
+
+struct rbtree_s{
+  rbnode_t *root;
+  rbnode_t nil;
+};
+
+//我们定义了结点的颜色，同时每个结点都增加了一个c域来表示结点的颜色。除此之外我们还为树定义了一个nil结点，之前实现的二叉查找树指向NIL都改为指向T->nil.
+```
+
+##### 查找
+
+因为红黑树本身就是一颗二叉查找树，所以对红黑树的查找操作跟普通的二叉查找树的操作没什么不一样
+
+```c
+rbnode_t * rbt_search(rbtree_t *T,int k)
+{
+  rbnode_t *x;
+  x = T->root;
+  while(x != &x->nil){
+  	if(k == x->k){
+  		break;
+	}
+    if(k < x->k){
+  		x = x->l;
+	}else{
+  		x = x->r;
+	}
+  }
+  if(x == &T->nil){
+  	x = 0;
+  }
+  return x;
+}
+```
+
+##### 旋转
+
+在介绍红黑色的插入与删除前，我们介绍一下二叉树的旋转操作：旋转分为左旋(Left-Rotate)和右旋(Right-Rotate)。
+
+```c
+//左旋，先用y替换x的位置，再将y的原左子树变成x的右子树，x成y的左子树
+
+void _rbt_left_rotate(rbtree_t *T,rbnode_t *x)
+{
+  rbnode_t *y;
+  y = x->r;
+  y->p = x->p;
+  if(x->p == &T->nil){
+  	x->p->l = y;
+  }else{
+  	if(x->p->l == x){
+  		x->p->l = y;
+	}else{
+  		x->p->r = y;
+  	}
+  }
+  x->r = y->l;
+  if (x->r != &T->nil){
+  	x->r->p = x;
+  }
+  x->p = y;
+  y->l = x;
+}
+
+```
+
+```c
+//右旋 先用y替换x的位置，再将y的原右子树变成x的左子树，x成y的右子树
+void _rbt_right_rotate(rbtree_t *T,rbnode_t *x)
+{
+  rbnode_t *y;
+  y = x->l;
+  y->p = x->p;
+  if(x->p == &T->nil){
+  	T->root = y;
+  }else{
+  	if(x->p->l == x){
+  		x->p->l = y;
+	}else{
+  		x->p->r = y;
+	}
+  }
+  x->l = y->r;
+  if(x->l != &T->nil){
+  	x->l->p =x;
+  }
+  x->p = y;
+  y->r = x;
+}
+//区分左旋还是右旋，我们只要看x最终是y的左孩子还是右孩子，如果左孩子那就是左旋，如果右孩子那就是右旋
+//二叉查找树的左旋和右旋并不会破坏其二叉查找树的数学性质
+```
+
+#### 插入
+
+```c
+//红黑树的插入前半部分与普通的二叉查找树的插入大致相同，我们来看一下插入的代码
+int rbt_insert(rbtree_t	*T,rbnode_t *z)
+{
+  rbnode_t *x,*y;
+  x = T->root;
+  y = x;
+  while( x != &T->nil){
+  	y = x;
+    if(z->k == x->k){
+  		return 1;
+	}
+    if(z->k < x->k){
+  		x = x->l;
+	}else{
+  		x = x->r;
+	}
+  }
+  z->l = z->r = z->p = &T->nil;
+  if(y == &T->nil){
+  	T->root = z;
+  }else{
+  	if(z->k < y->k)
+      y->l = z;
+    else
+      y->r = z;
+    z->p = y;
+  }
+  z->c = PBT_RED;
+  _rbt_insert_fixup(T,z);
+  return 0;
+}
+```
+
+```c
+void _rbt_insert_fixup(rbtree_t *T,rbnode_t *z)
+{
+  while(z->p->c == RBT_RED){
+  	if(z->p == z->p->p->l){
+  		if(z->p->p->r->c == RBT_RED){
+  			z->p->p->r->c = RBT_BLACK;	//case3
+          	z->p->c = RBT_BLACK;	//case3
+          	z->p->p->c = RBT_RED;	//case3
+          	z = z->p->p;	//case3
+		}else{
+  			if(z == z->p->r){
+  				z = z->p;	//case2
+              	_rbt_left_rotate(T,z);	//case2
+			}
+          	z->p->c = RBT_BLACK;	//case1
+          	z->p->p->c = RBT_RED;	//case1
+          	_rbt_right_rotate(T,z->p->p);	//case1
+		}
+	}else{
+  		if(z->p->p->l->c == RBT_RED){
+  			z->p->p->l->c = RBT_BLACK;	//case3
+          	z->p->c = RBT_BLACK;	//case3
+          	z->p->p->c = RBT_RED;	//case3
+          	z = z->p->p;			//case3
+		}else{
+  			if(z == z->p->l){
+  				z = z->p;					//case2
+              	_rbt_right_rotate(T,z);		//case2
+			}	
+          	z->p->c = RBT_BLACK;			//case1
+          	z->p->p->c = RBT_RED;			//case1
+          	_rbt_left_rotate(T,z->p->p);  //case1
+		}
+	}
+  }
+  T->root->c = RBT_BLACK;
+  return;
+}
+
+//向红黑树中新插入一个结点着成红色，我们可以通过不超过两次的旋转就可以恢复红黑树的性质。
+```
+
+#### 删除
+
+```c
+int rbt_remove(rbtree_t *T,rbnode_t *z)
+{
+  int c;
+  rbnode_t *x;
+  do{
+  	rbnode_t *y;
+    c = z->c;
+    if(z->r == &T->nil){
+  		x = z->l;
+      	_rbt_transplant(T,z,z->l);
+      	x->p = z->p;  //if x is nil
+      	break;
+	}
+    y = rbt_min(T,z->r);
+    c = y->c;
+    y->c = z->c;
+    x = y->r;
+    if(y != z->r){
+  		_rbt_transplant(T,y,y->r);
+      	x->p = y->p;  //if x is nil
+      	y->r = z->r;
+      	y->r->p = y;
+	}else{
+  		x->p = y; //if x is nil
+	}
+    _rbt_transplant(T,z,y);
+    y->l = z->l;
+    if(z->l != &T->nil){
+  		z->l->p = y;
+	}
+  }while(0);
+  
+  if((c == RBT_BLACK )&&(x->c == RBT_BLACK)){
+   	_rbt_remove_fixup(T,x);
+  }else{
+  	x->c = RBT_BLACK;
+  }
+  return 0;
+}
+```
+
+```c
+int _rbt_remove_fixup(rbtree_t *T,rbnode_t *x)
+{
+  rbnode_t *w;
+  while((x != T->root)&&(x->c == RET_BLACK)){
+  	if(x == x->p->l){
+  		w = x->p->r;
+      	if(w->c == RBT_RED){
+  			x->p->c = RBT_RED;
+          	w->c = RBT_BLACK;
+          	_rbt_left_rotate(T,x->p);	//case4
+          	w = x->p->r;	//case4
+		}
+      	if (w->c == RBT_BLACK){
+  			if((w->l->c == RBT_BLACK)&&(w->r->c == RBT_BLACK))
+            {
+  				w->c = RBT_RED;	//case3
+              	x = x->p;		//case3
+			}else{
+  				if(w->r->c == RBT_BLACK){//case2
+  					w->c = RBT_RED;//case2
+                  	w->l->c = RBT_BLACK;//case2
+                  	_rbt_right_rotate(T,w);//case2
+                  	w = x->p->r;//case2
+				}
+              	w->c = w->p->c;//case1
+              	w->p->c = RBT_BLACK;//case1
+              	w->r->c = RBT_BLACK;//case1
+              	_rbt_left_rotate(T,x->p);//case1
+              	x = T->root;
+			}
+		}
+	}else{
+      	w = x->p->l;
+      	if(w->c == RBT_RED){
+  			x->p->c = RBT_RED;
+          	w->c = RBT_BLACK;
+          	_rbt_right_rotate(T,x->p);//case4
+          	w = x->p->r;//case4
+		}
+      	if (w->c == RBT_BLACK){
+  			if((w->l->c == RBT_BLACK)&&(w->r->c == RBT_BLACK))
+            {
+  				w->c = RBT_RED;//case3
+              	x = x->p;	//case3
+			}else{
+  				if(w->l->c == RBT_BLACK){//case2
+  					w->c = RBT_RED;	//case2
+                  	w->r->c = RBT_BLACK;	//case2
+                  	_rbt_left_rotate(T,w);	//case2
+                  	w = x->p->l;//case2
+				}
+              	w->c = w->p->c;//case1
+              	w->p->c = RBT_BLACK;//case1
+              	w->l->c = RBT_BLACK;//case1
+              	_rbt_right_rotate(T,x->p);//case1
+              	x = T->root;
+			}
+		}
+	}
+  }
+  x->c = RBT_BLACK;
+  return 0;
+}
+```
+
