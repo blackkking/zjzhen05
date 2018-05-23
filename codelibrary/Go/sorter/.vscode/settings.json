@@ -1,0 +1,13 @@
+{
+    "files.autoSave": "onFocusChange",  
+    "go.buildOnSave": true,  
+    "go.lintOnSave": true,  
+    "go.vetOnSave": true,  
+    "go.buildFlags": [],  
+    "go.lintFlags": [],  
+    "go.vetFlags": [],  
+    "go.formatOnSave": true,  
+    "go.formatTool": "goreturns",  
+    "go.goroot": "c:\\go",  
+    "go.gopath": "C:\\Users\\ceshi\\Desktop\\zjzhen05\\codelibrary\\Go;C:\\Users\\ceshi\\Desktop\\zjzhen05\\codelibrary\\Go\\sorter"  
+}

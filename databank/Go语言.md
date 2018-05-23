@@ -1202,3 +1202,574 @@ func (r *Rect) area() float64 {
 }
 ```
 
+### 接口
+
+接口在Go语言有着至关重要的地位。如果说goroutine和channel 是支撑起Go语言的并发模型的基石，让Go语言在如今集群化与多核化的时代成为一道极为亮丽的风景，那么接口是Go语言整个类型系统的基石，让Go语言在基础编程哲学的探索上达到前所未有的高度。
+
+#### 其他语言的接口
+
+在Go语言出现之前，接口主要作为不同组件之间的契约存在。对契约的实现是强制的，你必须声明你的确实现了该接口。为了实现一个接口，你需要从该接口继承：
+
+```c++
+//c++的接口
+interface IFoo {
+  void Bar();
+}
+
+class Foo : public IFoo {
+  //....
+}
+
+IFoo* foo = new Foo;
+```
+
+即使另外有一个接口IFoo2实现了与IFoo完全一样的接口方法甚至名字也叫IFoo只不过位于不同的名字空间下，编译器也会认为上面的类Foo只实现了IFoo而没有实现IFoo2接口。
+
+这类接口我们称为侵入式接口。“侵入式”的主要表现在于实现类需要明确声明自己实现了某个接口。这种强制性的接口继承是面向对象编程思想发展过程中一个遭受相当多置疑的特性。我们接下来讨论一下为什么这是个问题，以及为何Go语言的接口设计是一个更合适的选择。
+
+设想我们现在要实现一个简单搜索引擎（SE），它需要依赖两个模块，一个是哈希表（HT），一个是HTML分析器（HtmlParser）。
+
+搜索引擎的实现者认为， SE对HT的依赖是确定性的，所以不需要在SE和HT之间定义接口，而是直接通过import（或者include）的方式使用HT；而模块SE对HtmlParser的依赖是不确定的，未来可能需要有WordParser、 PdfParser等模块来替代HtmlParser，以达到不同的业务要求。为此，他定义了SE和HtmlParser之间的接口，在模块SE中通过接口调用方式间接引用模块HtmlParser。
+
+应当注意到，接口的需求方是SE，只有SE才知道接口应该定义成什么样子，但是接口的实现方是HtmlParser。基于模块设计的单向依赖原则，模块HtmlParser实现自身的业务时，不应该关心某个具体使用方的要求。 HtmlParser在实现的时候，甚至还不知道未来有一天SE会用上它。
+
+期望模块HtmlParser能够知道需求方需要的所有接口，并提前声明实现这些接口是不合理的。同样的道理发生在SE自己身上。 SE并不能够预计未来会有哪些需求方会用到自己，并且实现它们所要求的接口。
+
+#### 非入侵式接口
+
+在Go语言中，一个类只需要实现了接口要求的所有函数，我们就说这个类实现了该接口
+
+```go
+type File struct {
+  	//....
+}
+func (f *File) Read(buf []byte) (n int, err error)
+func (f *File) Write(buf []byte) (n int, err error)
+func (f *File) Seek(off int64, whence int) (pos int64, err error)
+func (f *File) Close() error
+//这里我们定义了一个File类，并实现由Read(),Write(),Seek(),Close()等方法。设想我们有如下几个接口
+type IFile interface {
+  Read(buf []byte) (n int, err error)
+  Write(buf []byte) (n int, err error)
+  Seek(off int64,whence int) (pos int64,err error)
+  Close() error
+}
+
+type IReader interface {
+  Read(buf []byte) 
+}
+
+type IWriter interface {
+  Write(buf []byte) (n int, err error)
+}
+
+type ICloser interface {
+  Close() error
+}
+//尽管File类并没有从这些接口继承，甚至不知道这些接口的存在，但File类实习了这些接口，可以进行赋值
+var file1 IFile = new(File)
+var file2 IReader = new(File)
+var file3 IWriter = new(File)
+var file4 ICloser = new(File)
+
+```
+
+Go语言的非侵入式接口，看似只是做了很小的文法调整，实则影响深远
+
+- Go语言的标准库，再也不需要绘制类库的继承数图，你只需要知道类实现了那些方法和每个方法的含义
+- 实现类的时候，只需要关心自己应该提供那些方法不需要考虑接口的拆分细致问题
+- 不用为了实现一个接口而导入一个包，因为多引用一个外部的包，就意味着更多的耦合。接口由使用方按自身需求来定义，使用方无需关心是否有其他模块定义过类似的接口。
+
+#### 接口赋值
+
+接口赋值在Go语言中分为如下两种情况
+
+- 将对象实例赋值给接口
+- 将一个接口赋值给另一个接口
+
+如果是某种类型的对象实例赋值给接口，这要求该对象实例实现了接口要求的所有方法。
+
+```go
+type Integer int
+func (a Integer)Less(b Integer) bool {
+  return a < b
+}
+func (a *Integer)Add(b Integer) {
+  *a += b
+}
+//我们定义的接口LessAdder 
+type LessAdder interface {
+  Less(b Integer) bool
+  Add(b Integer)
+}
+//赋值
+var a Integer = 1
+var b LessAdder = &a //right
+var b LessAdder = a //wrong
+/*这里我们只能用&a,因为Go可以通过
+func (a Integer) Less (b Integer)bool
+自动生成一个系的less()方法
+func (a *Integer) Less (b Integer)bool {
+  	return (*a).Less(b)
+}*/
+```
+
+将一个接口赋值给另一个接口。在Go语言中，只要两个接口拥有相同的方法列表（次序不同不要紧），那么它们就是等同的，可以相互赋值。
+
+```go
+//第一个接口
+package one
+type ReadWrite interface {
+  Read(buf []byte) (n int, err error)
+  Write(buf []byte) (n int,err error)
+}
+//第二个接口在另外的包中
+package two
+type IStream interface {
+  Write(buf []byte) (n int, err error)
+  Read(buf []byte) (n int, err error)
+}
+//这里我们定义了两个接口，一个叫one.ReadWriter，一个叫two.Istream，两者都定义了Read()、 Write()方法，只是定义次序相反。 one.ReadWriter先定义了Read()再定义了Write()，而two.IStream反之
+//在Go语言中，这两个接口实际上并无区别
+var file1 two.IStream = new(File)
+var file2 one.ReadWrite = file1
+var file3 two.Istream = file2
+```
+
+接口赋值并不要求两个接口必须等价。如果接口A的方法列表是接口B的方法列表的子集，那么接口B可以赋值给接口A。但是反过来并不会成立
+
+#### 接口查询
+
+有办法让上面的Writer接口转换为two.IStream接口么？有。那就是我们即将讨论的接口查询语法，代码如下： 
+
+```go
+var file1 Write = ...
+if file5, ok := file1.(two.IStream); ok {
+  ...
+}
+//这个if语句检查file1接口指向的对象实例是否实现了two.IStream接口，如果实现了，则执行特定的代码
+```
+
+接口查询是否成功，要在运行期才能够确定。它不像接口赋值，编译器只需要通过静态类型检查即可判断赋值是否可行。 
+
+```go
+//在GO语言中，你可以查询接口它指向的对象是否是某个类型
+var file1 Write = ...
+if file6, ok := file1.(*File); ok {
+  ...
+}
+//这个if语句判断file1接口指向的对象实例是否是*File类型，如果是则执行特定代码。
+```
+
+#### 类型查询
+
+在Go语言中，还可以更加直截了当的查询接口指向的对象实例的类型
+
+```go
+var v1 interface{} = ...
+switch v := v1.(type) {
+  case int:
+  case string:
+  ...
+}
+```
+
+就像现实生活中物种多得数不清一样，语言中的类型也多得数不清，所以类型查询并不经常使用。它更多是个补充，需要配合接口查询使用，例如： 
+
+```go
+type Stringer interface {
+  String() string
+}
+
+func Println(args ...interface{}) {
+  for _, arg := range args {
+    switch v := v1.(type){
+   		case int:		
+    	case string:
+      	default:
+      	if v,ok := arg.(Stringer); ok{
+          val	:= v.String()
+          ....
+		}else{
+  			//....
+		}	 
+    }
+  }
+}
+```
+
+#### 接口组合
+
+像之前介绍的类型组合一样，Go语言同样支持接口组合。我们已经介绍过Go语言包中io.Reader接口和io.Writer接口，接下来我们再介绍同样来自于io包的另一个接口io.ReadWriter：
+
+```go
+//ReadWriterjiek哦将基本的Read和Write组合起来
+type ReadWriter interface {
+  Reader
+  Writer
+}
+//这个接口组合了Reader和Writer两个接口，它完全等同于如下写法：
+type ReadWriter interface {
+  Read(p []byte) (n int,err error)
+  Write(p []byte) (n int,err error)
+}
+```
+
+可以认为接口组合是类型匿名组合的一个特定场景，只不过接口只包含方法，而不包含任何成员变量。
+
+#### Any类型
+
+由于Go语言中任何对象实例都满足空接口interface{}，所以interface{}看起来像是可以指向任何对象的Any类型，如下 
+
+```go
+var v1 interface{} = 1 
+var v2 interface{} = "abc"
+var v3 interface{} = &v2    //把*interface{}类型赋值给interface{}
+var v4 interface{} = strcut{ X int }{1}
+var v5 interface{} = &strcut{ X int }{1}
+```
+
+当函数可以接受任意的对象实例时，我们会将其声明为interface{}，最典型的例子是标准库fmt中PrintXXX系列的函数，例如： 
+
+```go
+func Printf(fmt string,args ...interface{})
+func Println(args ...interface{})
+```
+
+总体来说， interface{}类似于COM中的IUnknown，我们刚开始对其一无所知，但可以通过接口查询和类型查询逐步了解它。 
+
+## 并发编程
+
+并发包含以下几种主流的实现模型
+
+- 多进程：多进程是在操作系统层面进行并发的基本模式，同时也是开销最大的模式。在Linux平台上，很多工具链正是采用这种模式在工作。比如某个web服务器，它会有专门的进程负责网络端口的监听和链接管理，还会有专门的进程负责事务和运算。这种方法的好处在于简单，进程间互不影响，坏处在域系统开销大，因为所有的进程都是由内核管理的
+- 多线程：多线程在大部分操作系统上都属于系统层面的并发模式，也是我们使用最多的最有效的一种模式。目前，我们所见的几乎所有工具链都会使用这种模式，它比多进程的开销小很多，但是其开销依旧比较大，且在高并发模式下，效率会有影响
+- 基于回调的非阻塞/异步IO。这种架构的诞生实际上来源于多线程模式的危机。在很多高并发服务器开发实践中，使用多线程模式会很快耗尽服务器的内存和CPU资源。而这种模式通过事件驱动的方式使用异步IO，使服务器持续运转，且尽可能地少用线程，降低开销，它目前在Node.js中得到了很好的实践。但是使用这种模式，编程比多线程要复杂，因为它把流程做了分割，对于问题本身的反应不够自然
+- 协程。协程(Coroutine) 本质上是一种用户态线程，不需要操作系统来进行抢占式调度，且在真正的实现中寄存于线程中，因此，系统开销极小，可以有效提高线程的任务并发性，而避免多线程的缺点，使用协程的优点是编程简单，结构清晰，缺点是需要语言的支持，如果不支持，则需要用户在程序中自行实现调度器。目前，原生支持协程的语言还很少
+
+### 协程
+
+执行体是个抽象的概念，在操作系统层面有多个概念与之对应，比如操作系统自己掌管的进程(process),进程内的线程(thread)以及进程内的协程(coroutine,也叫轻量级线程)。与传统的系统级线程和进程相比，协程的最大优势在于其"轻量级",可以轻松创建上上百万个而不会导致系统资源衰竭，而线程和进程最多也不会超过1万个。
+
+多数语言不直接支持协程，而是通过库的方式支持，但是库的方式支持的功能也不完整，比如仅仅提供轻量级线程的创建，销毁与切换等能力。如果在这样的轻量级线程中调用一个同步IO操作，比如网络通信，本地文件读写，都会阻塞其他的并发执行轻量级线程。
+
+GO语言在语言级别支持轻量级线程，叫goroutine。Go语言标准库提供的所有系统调用操作，都会出让CPU给其他goroutine,这让事情变得非常简单，让轻量级线程的切换管理不依赖于系统的线程和进程，也不依赖于CPU的核心数量
+
+### goroutine
+
+goroutine是Go语言中的轻量级线程实现，由Go运行时(runtime)管理，
+
+假设我们需要实现一个函数Add( )，他把两个参数相加，并将结果打印到屏幕上没具体代码如下
+
+```go
+func Add(x, y int) {
+  z := x + y
+  fmt.Println(z)
+}
+//让这个函数并发执行
+go Add(1,1)
+```
+
+在一个函数调用前加上go关键字，这次调用就会在一个新的goroutine中并发执行。当被调用的函数返回时，这个goroutine也自动结束了。需要注意的是，如果这个函数有返回值，那么这个返回值会被丢弃
+
+```go
+package main 
+import "fmt"
+func Add(x, y int) {
+  z := x + y
+  fmt.Println(z)
+}
+func main() {
+  for i := 0; i < 10; i++ {
+  	go Add(i, i)
+  }
+}
+//我们在一个for循环中调用了10次Add( )函数，它们是并发执行的。我们在屏幕上看不到输出
+```
+
+Go程序从初始化main package并执行main()函数开始，当main()函数返回时，程序退出，且程序并不等待其他goroutine（非主goroutine）结束。
+
+对于上面的例子，主函数启动了10个goroutine，然后返回，这时程序就退出了，而被启动的执行Add(i, i)的goroutine没有来得及执行，所以程序没有任何输出。
+
+要让主函数等待所有goroutine退出后再返回，如何知道goroutine都退出了呢?这就引出了多个
+
+要让主函数等待所有goroutine退出后再返回，如何知道goroutine都退出了呢?这就引出了多个goroutine之间通信的问题。下一节我们将主要解决这个问题。 
+
+### 并发通信
+
+并发编程的难度在于协调，而协调就要通过交流。从这个角度看来 ，并发单元间的通信是最大的问题。
+
+在工程上，有两种最常见的并发通信模型：共享数据和消息
+
+共享数据是指多个并发单元分别保持对同一个数据的引用，实现对该数据的共享。被共享的数据可能有多种形式，比如内存数据块，磁盘文件，网络数据等。在实际工程应用中最常见的无疑是内存了，也就是常说的共享内存
+
+C语言中通常是怎么处理线程间数据共享的
+
+```C
+//thread.c C语言的线程数据共享处理
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+
+void *count();
+pthread_mutex_t mutex1 = PTHREAD_MUTEX_INITIALIZER;
+int counter = 0;
+
+main()
+{
+  int rc1, rc2;
+  pthread_t thread1,thread2;
+  //创建线程，没个线程独立运行函数functionC
+  if((rc1 = pthread_create(&thread1,NULL,&add,NULL)))
+  {
+  	printf("Thread creation failed: %d\n",rc1);
+  }
+  if((rc2 = pthread_create(&thread2,NULL,&add,NULL)))
+  {
+  	printf("Thread creation failed: %d\n",rc2);
+  }
+  //等待所有线程执行完毕
+  pthread_join( thread1, NULL);
+  pthread_join( thread2, NULL);
+  
+  exit(0);
+}
+void *count()
+{
+  pthread_mutex_lock(&mutex1);
+  counter++;
+  printf("Counter value: %d\n",counter);
+  pthread_mutex_unlock(&mutex1);
+}
+```
+
+```go
+//我们把上面的C翻译成go
+package main
+import "fmt"
+import "sync"
+import "runtime"
+
+var counter int = 0
+
+func Count(lock *sync.Mutex) {
+  lock.Lock()
+  counter++
+  fmt.Println(z)
+  lock.Unlock()
+}
+func main() {
+  lock := &sync.Mutex{}
+  
+  for i := 0; i < 10; i++ {
+  	go Count(lock)
+  }
+  for {
+    lock.Lock()
+    c := counter
+    lock.Unlock()
+    runtime.Gosched()
+    if c >= 10 {
+  		break
+	}
+  }
+}
+```
+
+Go语言提供的是另一种通信模型，即以消息机制而非共享内存作为通信方式。
+
+消息机制认为每个并发单元是自包含的，独立的个体，并且都有自己的变量，但在不同并发单元间这些变量不共享。每个并发单元的输入和输出只有一种，那就是消息。真有点类似于进程的概念，每个进程不会被其他进程打扰，它只做好自己的工作就可以了。不同进程间靠消息来通信，它们不会共享内存。
+
+Go语言提供的消息通信机制被称为channel。
+
+不要通过共享内存来通信，而应该通过通信来共享内存。
+
+### channel
+
+channel是Go语言在语言级别提供的goroutine的通信方式，我们可以使用channel在两个或多个goroutine之间传递消息。channel是进程间的通信方式，因此通过channel传递对象的过程和调用函数时的参数传递行为比较一致，比如也可以传递指针等，如果需要跨进程通信，我们建议用分布式系统的方法来解决，比如使用Socket或者HTTP等通信协议。
+
+channel是类型相关的，也就是说，一个channel只能传递一种类型的值。这个类型需要在声明channel时指定。如果对Unix管道有所了解的话，就不难理解channel,可以将其认为是一种类型安全的管道
+
+我们用channel重写上面的例子
+
+```go
+package main
+import "fmt"
+func Count (ch chan int) {
+  ch < -1
+  fmt.Println("Counting")
+}
+func main() {
+  chs := make([]chan int, 10)
+  for i := 0; i<10 ;i++ {
+  	chs[i] = make(chan int)
+    go Count(chs[i])
+  }
+  for _, ch := range(chs) {
+  	<-ch
+  }
+}
+```
+
+在这个例子中，我们定义了一个包含10个channel的数组（名为chs），并把数组中的每个channel分配给10个不同的goroutine。在每个goroutine的Add()函数完成后，我们通过ch <- 1语句向对应的channel中写入一个数据。在所有的goroutine启动完成后，我们通过<-ch语句从10个channel中依次读取数据，在对应的channel写入数据前，这个操作也是阻塞的。这样，我们就用channel实现了类似锁的功能，进而保证了所有goroutine完成后主函数才返回。
+
+我们在使用Go语言开发时，经常会遇到需要实现条件等待的场景，这也是channel可以发挥作用的地方。对channel的熟练使用，才能真正理解和掌握Go语言并发编程。 
+
+#### 基本语法
+
+```go
+//一般channel的声明形式为
+var chanName chan ElementType
+//于一般的变量声明不同的地方仅仅是在类型之前加chan关键字。ElementType指定这个channel所能传递的元素类型
+var ch chan int //传递类型为int的channel
+var m map[string] chan bool //声明一个map，元素是bool型的channel
+//定义一个channel也很简单，直接使用内置的函数make()
+ch := make(chan int) //声明并初始化了一个int型的名为ch的channel
+
+//在channel的用法中，最常见的包括写入和读出，将一个数据写入(发送)至channel的语法很直观
+ch <- value
+//向channel写入数据通常会导致程序阻塞，直到有其他goroutine从这个channel中读取数据。从channel中读取数据的语法是：
+value := <-ch
+//如果channel之前没有写入数据，那么从channel中读取数据也会导致程序阻塞，直到channel中被写入数据为止
+```
+
+我们也可以控制channel只接受写或者只允许读取，即单向channel
+
+#### select
+
+早在Unix时代，select机制就已经被引入。通过调用select( )函数来监控一系列的文件句柄，一旦其中一个文件句柄发送了IO动作，该select()调用就会被返回。后来该机制也被用于实现高并发的Socket服务器程序。go语音直接在语言级别支持select关键字，用于处理异步IO问题。
+
+select的用法与switch语言非常类似，由select开始一个新的选择块，每个选择条件由case语句来描述。与switch语句可以选择任何可以使用相等比较的条件相比，select有很多的限制，其中最大的一条限制就是每个case语句必须必须是一个IO操作
+
+```go
+//select 的大致结构
+select {
+  case <-chan1:
+  	//如果chan1成功读到数据，则进行该case处理语句
+  case chan2 < -1:
+  	//如果成功向chan2写入数据，则进行该case处理语句
+  default:
+  	// 如果上面都没有成功，则进入default处理流程
+}
+
+
+```
+
+可以看出， select不像switch，后面并不带判断条件，而是直接去查看case语句。每个case语句都必须是一个面向channel的操作。比如上面的例子中，第一个case试图从chan1读取一个数据并直接忽略读到的数据，而第二个case则是试图向chan2中写入一个整型数1，如果这两者都没有成功，则到达default语句。
+
+```go
+//基于此功能，我们可以实现一个有趣的程序
+
+ch := make(chan int, 1)
+for {
+  select {
+  	case ch <- 0;
+    case ch <- 1;
+  }
+  i := <-ch
+  fmt.Println("Value received:",i)
+}
+//这个程序实现了一个随机向ch中写入一个0或者1的过程
+```
+
+#### 缓冲机制
+
+之前我们示范创建的都是不带缓冲的channel，这种做法对于传递单个数据的场景可以接受，但对于需要持续传输大量数据的场景就有些不合适了。接下来我们介绍如何给channel带上缓冲，从而达到消息队列的效果。
+
+要创建一个带缓冲的channel，其实也非常容易： 
+
+```go
+c := make(chan int, 1024)
+//在调用make()时将缓冲区大小作为第二个参数传入即可，比如上面这个例子就创建了一个大小为1024的int类型channel，即使没有读取方，写入方也可以一直往channel里写入，在缓冲区被填完之前都不会阻塞。
+//从带缓冲的channel中读取数据可以使用与常规非缓冲channel完全一致的方法，但我们也可以使用range关键来实现更为简便的循环读取：
+for i := range c {
+  fmt.Println("Received:",i)  
+}
+```
+
+#### 超时机制
+
+在并发编程的通信过程中，最需要处理的就是超时问题，即向channel写数据时发现channel已满，或者从channel试图读取数据时发现channel为空。如果不正确处理这些情况，很可能会导致整个goroutine锁死。
+
+Go语言没有提供直接的超时处理机制，但我们可以利用select机制。虽然select机制不是专为超时而设计的，却能很方便地解决超时问题。因为select的特点是只要其中一个case已经完成，程序就会继续往下执行，而不会考虑其他case的情况。
+
+```go
+//实现channel的超时机制
+//首先，我们实现并执行一个匿名的超时等待函数
+timeout := make(chan bool,1)
+go func() {
+  time.Sleep(le9) //等待1秒
+  timeout <- true
+}()
+
+//然后我们把timeout这个channel利用起来
+select {
+  case <-ch:
+  		//从ch中读取到数据
+  case <-timeout
+  		//一直没从ch中读取数据，但从timeout中读取到了数据
+}
+```
+
+这样使用select机制可以避免永久等待的问题，因为程序会在timeout中获取到一个数据后继续执行，无论对ch的读取是否还处于等待状态，从而达成1秒超时的效果。
+这种写法看起来是一个小技巧，但却是在Go语言开发中避免channel通信超时的最有效方法。在实际的开发过程中，这种写法也需要被合理利用起来，从而有效地提高代码质量。
+
+#### channel的传递
+
+需要注意的是，在Go语言中channel本身也是一个原生类型，与map之类的类型地位一样，因此channel本身在定义后也可以通过channel来传递
+
+我们可以使用这个特性来实现Linux上非常常见的管道特性。管道也是使用非常广泛的一种设计模式，比如在处理数据时，我们可以采用管道设计，这样可以比较容易以插件的方式增加数据的处理流程
+
+下面我们利用channel可被传递的特性来实现我们的管道。为了简化表达，我们假设在管道中传递的数据只是一个整型数，在实际的应用场景中这通常会是一个数据块。
+
+```go
+//定义限定基本的数据结构：
+type PipeData struct {
+  value int 
+  handler func(int) int
+  next chan int
+//然后我们写一个常规的处理函数，我们只要定义一系列pipeDate的数据结构并一起传递给这个函数，就可以达到流式处理数据的目的
+func handle(queue chan *PipeData) {
+  for data := range queue {
+  	data.next <- data.handler(data.value)
+  }
+}
+```
+
+利用channel的这个可传递特性，我们可以实现非常强大、灵活的系统架构。
+
+#### 单向channel
+
+顾名思义，单向channel只能用于发送或者接收数据。 channel本身必然是同时支持读写的，否则根本没法用。假如一个channel真的只能读，那么肯定只会是空的，因为你没机会往里面写数据。同理，如果一个channel只允许写，即使写进去了，也没有丝毫意义，因为没有机会读取里面的数据。所谓的单向channel概念，其实只是对channel的一种使用限制
+
+我们在将一个channel变量传递到一个函数时，可以通过将其指定为单向channel变量，从限制 该函数中可 以对此 channel的操作， 比如只能往 这个 channel写，或者只 能从这个channel读。
+
+```go
+//单向channel变量的声明非常简单
+var ch1 chan int 	//normal
+var ch2 chan<- float64	// 单向，只用于写入float64数据
+var ch3 <-chan int 	//单向channel，只用于读取int数据
+//初始化channel.channel是以个原生类型，支持被传递和类型转化。即我们可以再单向channel和双向channel之间进行转换
+ch4 := make(chan int)
+ch5 := <-chan int(ch4) 	// 一个单向的读取channel
+ch6 := chan<- int(ch4)  // 一个单向的写入channel
+```
+
+为什么要做这样的限制呢？从设计的角度考虑，所有的代码应该都遵循“最小权限原则”，从而避免没必要地使用泛滥问题，进而导致程序失控。写过C++程序的读者肯定就会联想起const指针的用法。非const指针具备const指针的所有功能，将一个指针设定为const就是明确告诉函数实现者不要试图对该指针进行修改。单向channel也是起到这样的一种契约作用。
+
+```go
+func Parse(ch <-chan int) {
+  for value := range ch {
+  	fmt.Println("Parsing value", value)
+  }
+}
+```
+
+#### 关闭channel
+
+```go
+close(ch)
+//判断channel是否关闭
+x, ok := <-ch
+//这个用法和map中的按键获取value的过程类似，只需要看第二个bool返回值即可，如果是false则表示ch被关闭
+```
