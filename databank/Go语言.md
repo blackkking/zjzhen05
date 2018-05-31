@@ -68,6 +68,29 @@ go build hello.go
 #6g和6l是64位版本的GO编译器和连接器，对应32位版本工具为8g和8l.
 ```
 
+#### Go的25个关键字
+
+```go
+var 
+const
+package
+import
+func
+return
+defer
+go
+select
+interface
+struct
+break,case,continue,for,fallthrough,else,if,switch,goto,default
+chan
+type
+map
+range
+```
+
+
+
 #### 工程管理
 
 在实际的开发工作中，直接调用编译器进行编译和链接的场景是少而又少，因为在工程中不会简单到只有一个源代码文件，且源文件之间会有相互的依赖关系。如果这样一个文件一个文件逐步编译，那不亚于一场灾难。 Go语言的设计者作为行业老将，自然不会忽略这一点。早期Go语言使用makefile作为临时方案，到了Go 1发布时引入了强大无比的Go命令行工具。
@@ -409,7 +432,7 @@ Elements of myArray:
 Elements of mySlice:
 1 2 3 4 5
 //Go语言支持用myArray[first:last]这样的方式来基于数组生成一个数组切片，而且这个用法还很灵活，比如下面几种都是合法的
-//基于myArray的所有火元素创建数组切片:
+//基于myArray的所有元素创建数组切片:
 mySlice = myArray[:]
 //基于myArray的前5个元素创建数组切片:
 mySlice = myArray[:5]
@@ -537,7 +560,6 @@ value, ok := myMap["1234"]
 if ok{//找到了
   //处理找到的value
 }
-
 ```
 
 ### 流程控制
@@ -1271,7 +1293,6 @@ var file1 IFile = new(File)
 var file2 IReader = new(File)
 var file3 IWriter = new(File)
 var file4 ICloser = new(File)
-
 ```
 
 Go语言的非侵入式接口，看似只是做了很小的文法调整，实则影响深远
@@ -1773,3 +1794,427 @@ close(ch)
 x, ok := <-ch
 //这个用法和map中的按键获取value的过程类似，只需要看第二个bool返回值即可，如果是false则表示ch被关闭
 ```
+### 多核并行化
+
+在执行一些昂贵的计算任务时，我们希望能够尽量利用现代服务器普遍具备的多核特性来尽量将任务并行化，从而达到降低总计算时间的目的。此时我们需要了解CPU核心的数量，并针对性地分解计算任务到多个goroutine中去并行运行。
+
+面我们来模拟一个完全可以并行的计算任务：计算N个整型数的总和。我们可以将所有整型数分成M份， M即CPU的个数。让每个CPU开始计算分给它的那份计算任务，最后将每个CPU的计算结果再做一次累加，这样就可以得到所有N个整型数的总和：
+
+```go
+type Vector []float64
+
+//分配给每个CPU的计算任务
+func (v Vector) DoSome(i, n int, u Vector, c chan int){
+	for ; i<n; i++ {
+  		v[i] += u.Op(v[i])
+	}
+  	c <- 1		//发信号告诉任务管理者我已经计算完成了
+}
+
+const NCPU = 16		//假设共有16核
+func (v Vector) DoAll(u Vector) {
+  c := make(chan int, NCPU) //用于接受每个CPU的任务完成信号
+  for i := 0; i < NCPU; i++ {
+  	go  v.DoSome(i*len(v)/NCPU, (i+1)*len(v)/NCPU, u, c)
+  }
+  
+  //等待所有CPU的任务完成
+  for i := 0; i < NCPU; i++ {
+  	<-c //获取一个数据，表示一个计算完成了
+  }
+}
+```
+
+否可以将总的计算时间降到接近原来的1/N呢？答案是不一定。如果掐秒表（正常点的话，应该用7.8节中介绍的Benchmark方法），会发现总的执行时间没有明显缩短。再去观察CPU运行状态，你会发现尽管我们有16个CPU核心，但在计算过程中其实只有一个CPU核心处于繁忙状态，这是会让很多Go语言初学者迷惑的问题。
+官方的答案是，这是当前版本的Go编译器还不能很智能地去发现和利用多核的优势。虽然我们确实创建了多个goroutine，并且从运行状态看这些goroutine也都在并行运行，但实际上所有这些goroutine都运行在同一个CPU核心上，在一个goroutine得到时间片执行的时候，其他goroutine都会处于等待状态。从这一点可以看出，虽然goroutine简化了我们写并行代码的过程，但实际上整体运行效率并不真正高于单线程程序
+
+### 出让时间片
+
+我们可以再每个goroutine中控制何时主动出让时间片给其他goroutine,这可以使用runtime包中的Gosched()函数实现
+
+实际上，如果要比较精细地控制goroutine的行为，就必须比较深入地了解GO语言开发包中runtime包所提供的具体功能
+
+### 同步
+
+#### 同步锁
+
+Go语言包中的sync包提供了两种锁的类型：sync.Mutex 和sync.RWMutex.Mutex是最简单的一种锁类型，同时也比较暴力，当一个goroutine获得了Mutex后，其他goroutine就只能乖乖等到这个goroutine释放该Mutex。 RWMutex相对友好些，是经典的单写多读模型。在读锁占用的情况下，会阻止写，但不阻止读，也就是多个goroutine可同时获取读锁（调用RLock()方法；而写锁（调用Lock()方法）会阻止任何其他goroutine（无论读和写）进来，整个锁相当于由该goroutine独占。从RWMutex的实现看， RWMutex类型其实组合了Mutex：
+
+```go
+type RWMutex struct {
+	w Mutex
+  	writeSem uint32
+  	readerSem uint32
+  	readerCount int32
+  	readerWait int32
+}
+```
+
+对于这两种锁类型，任何一个Lock( ) 或 RLock( )均需要保证对应有Unlock( )或RUnlock( )调用与之对应。否则可能导致等待该锁的所有goroutine处于饥饿状态，甚至可能导致死锁。锁的典型使用模式如下：
+
+```go
+var l sync.Mutex
+func foo() {
+	l.Lock()
+  	defer l.Unlock()
+  	//....
+}
+```
+
+#### 全局唯一性操作
+
+对于从全局的角度只需要运行一次的代码，比如全局初始化操作， Go语言提供了一个Once类型来保证全局的唯一性操作，具体代码如下：
+
+```go
+var a string 
+var once sync.Once
+
+func setup() {
+  a = "hello, world"
+}
+
+func doprint() {
+  once.Do(setup)
+  print(a)
+}
+
+func twoprint() {
+  go doprint
+  go doprint
+}
+```
+
+如果这段代码没有引入Once， setup()将会被每一个goroutine先调用一次，这至少对于这个例子是多余的。在现实中，我们也经常会遇到这样的情况。 Go语言标准库为我们引入了Once类型以解决这个问题。 once的Do()方法可以保证在全局范围内只调用指定的函数一次（这里指setup()函数），而且所有其他goroutine在调用到此语句时，将会先被阻塞，直至全局唯一的once.Do()调用结束后才继续。
+
+为了更好地控制并行中的原子性操作， sync包中还包含一个atomic子包，它提供了对于一些基础数据类型的原子操作函数，比如下面这个函数：
+
+```go
+func CompareAndSwapUnit64(val *uint64,old,new uint64) (swapped bool)
+```
+
+就提供了比较和交换两个uint64类型数据的操作。这让开发者无需再为这样的操作专门添加Lock操作
+
+## 网络编程
+
+本章我们将全面介绍如何使用Go语言开发网络程序。 Go语言标准库里提供的net包，支持基于IP层、 TCP/UDP层及更高层面（如HTTP、 FTP、 SMTP）的网络操作，其中用于IP层的称为Raw Socket。
+
+### Socket 编程
+
+在Go语言中编写网络程序时，我们将看不到传统的编码形式。以前我们使用socket编程时，步骤如下：
+
+- 建立Socket: 使用socket( )函数
+- 绑定Socket: 使用bind()函数
+- 监听：使用listen( )函数，或者链接：使用connect( )函数
+- 接受链接：使用accept( )函数
+- 接受:使用receive( )函数，或者发送: 使用send( )函数
+
+Go语言标准库对此过程进行了抽象和封装。无论我们期待使用声明协议建立什么形式的连接，都只需要调用net.Dial ( )即可
+
+#### Dial( )函数
+
+```go
+//Dial( )函数的原型如下：
+func Dial(net, addr string) (Conn, error)
+//其中net参数是网络协议的名字，addr参数是IP地址或域名，而端口号以':'的形式跟随在地址或域名的后面，端口号可选，如果连接成功，返回连接对象，否则返回error
+
+//几种常见协议的调用方式
+//TCP连接：
+conn, err := net.Dial("tcp","192.168.0.10:2100")
+//UDP连接
+conn, err := net.Dial("udp","192.168.0.12:975")
+//ICMP链接(使用协议名称)
+conn, err := net.Dial("ip4:icmp","www.baidu.com")
+//ICMP连接(使用协议编号)
+conn, err := net.Dial("ip4:1","10.0.0.3")
+```
+
+目前， Dial()函数支持如下几种网络协议： "tcp"、 "tcp4"（仅限IPv4）、 "tcp6"（仅限IPv6）、 "udp"、 "udp4"（仅限IPv4）、 "udp6"（仅限IPv6）、 "ip"、 "ip4"（仅限IPv4）和"ip6"（仅限IPv6）。
+
+成功建立连接后，我们就可以进行数据的发送和接收。发送数据时，使用conn的Write()成员方法，接收数据时使用Read()方法。
+
+#### ICMP示例程序
+
+我们使用ICMP协议向在线的主机发送一个问候，并等待主机 返回
+
+```go
+package main
+
+import (
+  "net"
+  "os"
+  "bytes"
+  "fmt"
+)
+
+func main() {
+  	if len(os.Args) != 2 {
+      fmt.Println("Usage: ",os.Args[0],"host")
+      os.Exit(1)
+	}
+  	service := os.Args[1]
+  
+  	conn,err := net.Dial("ip4:icmp",service)
+  	checkError(err)
+  
+  	var msg [512]byte
+  	msg[0] = 8	//echo
+  	msg[1] = 0	//code 0
+  	msg[2] = 0  //checksum
+  	msg[3] = 0  //checksum
+  	msg[4] = 0	//identifier[0]
+  	msg[5] = 13	//identifier[1]
+  	msg[6] = 0	//sequence[0]
+  	msg[7] = 37 //sequence[1]
+  	len := 8
+    check :=  checkSum(msg[0:len])
+  msg[2] = byte(check >> 8)
+  msg[3] = byte(check & 255)
+  _,err = conn.Write(msg[0:len])
+  checkError(err)
+  _,err = conn,Read(msg[0:])
+  checkError(err)
+  
+  fmt.Println("Got response")
+  if msg[5] == 13 {
+  	fmt.Println("Identifier matches")
+  }
+  if msg[7] == 37 {
+  	fmt.Println("Sequence matches")
+  }
+  
+  os.Exit(0)
+}
+
+func checkSum(msg []byte) uint16 {
+  sum := 0
+  //先假设为偶数
+  for n := 1;n < len(msg) -1; n += 2{
+  	sum += int(msg[n])*256 + int(msg[n+1])
+  }
+  sum = (sum >> 16) + (sum & oxffff)
+  sum += (sum >> 16)
+  var answer uint16 = uint16(^sum)
+  return answer
+}
+
+func checkError(err error) {
+	if err != nil {
+      fmt.Fprintf(os.Stderr,"Fatal error: %s",err.Error())
+      os.Exit(1)
+	}
+}
+
+func readFully(conn net.Conn) ([]byte,error){
+  defer conn.Close()
+  result := bytes.NewBuffer(nil)
+  var buf [512]byte
+  for {
+    n,err := conn.Read(buf[0:])
+    result.Write(buf[0:n])
+    if err != nil {
+  		if err == io.EOF{
+  			break
+		}
+      	return nil,err
+	}
+  }
+  return result.Bytes(),nil
+}
+```
+
+#### TCP示例
+
+下面我们建立TCP连接来实现初步的HTTP协议。通过向网络主机发送	HTTP head请求读取网络主机返回的信息
+
+```go
+package main
+
+import (
+	"net"
+  	"os"
+  	"bytes"
+  	"fmt"
+)
+
+func main() {
+  	if len(os.Args) != 2 {
+      fmt.Fprintf(os.Stderr."Usage: %s host: port",os.Args[0])
+      os.Exit(1)
+	}
+  service := os.Args[1]
+  
+  conn, err := net.Dial("tcp",service)
+  checkError(err)
+  result, err := readFully(conn)
+  checkError(err)
+  fmt.Println(string(result))
+  
+  os.Exit(0)
+}
+
+func checkError(err error) {
+  if err != nil {
+    fmt.Fprintf(os.Stderr,"Fatal error: %s",err.Error())
+    os.Exit(1)
+  }
+}
+
+func readFully(conn net.Conn) ([]byte,error) {
+  defer conn.Close()
+  result := bytes.NewBuffer(nil)
+  var buf [512]byte
+  for {
+    n, err := conn.Read(buf[0:])
+    result.Write(buf[0:n])
+    if err != nil {
+  		if err == io.EOF {
+  			break
+		}
+      	return nil,err
+	}
+  }
+  return result.Bytes(),nil
+}
+```
+
+#### 更丰富的网络通信
+
+实际上， Dial()函数是对DialTCP()、 DialUDP()、 DialIP()和DialUnix()的封装。我
+们也可以直接调用这些函数，它们的功能是一致的。这些函数的原型如下：
+
+```go
+func DialTCP(net string, laddr, raddr *TCPAddr) (c *TCPConn, err error)
+func DialUDP(net string, laddr, raddr *UDPAddr) (c *UDPConn, err error)
+func DialIP(netProto string,laddr, raddr *IPAddr) (*IPConn, error)
+func DialUnix(net string, laddr, raddr *UnixAddr) (c *UnixConn, err error)
+```
+
+之前基于TCP发送HTTP请求，读取服务器返回的HTTP Head的整个流程也可以使用这些函数实现
+
+```go
+package main 
+
+import (
+	"net"
+  	"os"
+  	"fmt"
+  	"io/ioutil"
+)
+
+func main() {
+  if len(os.Args) != 2 {
+    fmt.Fprintf(os.Stderr,"Usage: %s host:port",os.Args[0])
+    os.Exit(1)
+  }
+  service := os.Args[1]
+  
+  tcpAddr, err := net.ResolveTCPAddr("tcp4",service)
+  checkError(err)
+  
+  conn,err := net.DialTCP("tcp",nil.tcpAddr)
+  checkError(err)
+  
+  _, err = conn.Write([]byte("HEAD / HTTP/1.0\r\n\r\n"))
+  checkError(err)
+  
+  result, err := ioutil.ReadAll(conn)
+  checkError(err)
+  
+  fmt.Println(string(result))
+  
+  os.Exit(0)
+
+}
+
+func checkError(err error) {
+  if err !=  nil {
+    fmt.Fprintf(os.Stderr,"Fatal error :%s",err.Error())
+    os.Exit(1)
+  }
+}
+//与之前的例子比较，两个不同
+//net.ResolveTCPAddr(),用于解析地址和端口号
+//net.DialTCP() 建立连接
+//验证IP地址有效性
+func net.ParseIP()
+//创建子网掩码的代码
+func IPv4Mask(a,b,c,d byte) IPMask
+//获取默认子网掩码
+func (ip IP) DefaultMask() IPMask
+//根据域名查找IP的代码如下
+func ResolveIPAddr(net, addr string) (*IPAddr,error)
+func LookupHost(name string) (cname string,addrs []string, err error);
+```
+
+### HTTP编程
+
+HTTP(HyperText Transfer Protocol,超文本协议)是互联网上应用最为广泛的一种网络协议，定义了客户端和服务端之间请求与响应的传输标准
+
+Go语言标准库内建提供了net/http包，涵盖了HTTP客户端和服务端的具体实现。使用net/http包，我们可以很方便地编写HTTP客户端或服务端的程序。 
+
+#### HTTP客户端
+
+Go内置的net/http包提供了最简洁的HTTP客户端实现，我们无需借助第三方网络通信库(比如libcur1)就可以直接使用HTTP中用得最多的GET和POST方式请求数据
+
+##### 基本方法
+
+net/http包的Client类型提供了如下几个方法，让我们可以用最简洁的方式实现 HTTP
+请求：
+
+```go
+func (c *Client) Get(ur1 string) (r *Response, err error)
+func (c *Client) Post(ur1 string, bodyType string, body io.Reader) (r *Response, err error)
+func (c *Client) PostForm(ur1 string,data ur1.Values) (r *Response, err error)
+func (c *Client) Head(ur1 string) (r *Response, err error)
+func (c *Client) Do(req *Request) (resp *Response, err error)
+```
+
+##### http.Get( ) 
+
+要请求一个资源，只需要调用http.Get( )方法(等价于http.DefaultClient.Get()) 即可
+
+```go
+//请求一个网站首页，并将其网页内容打印到标准输出流
+resp, err := http.Get("http://example.com/")
+if err != nil {
+  //处理错误
+  return
+}
+
+defer resp.Body.close()
+io.Copy(os.Stdout,resp.Body)
+
+```
+
+##### http.Post
+
+要以POST的方式发送数据，也很简单。只需要调用http.Post( )方法并依次传递下面的三个参数即可：
+
+- 请求目标的URL
+- 将要POST数据的资源类型(MIMEType)
+- 数据的比特流( []byte形式)
+
+```go
+//如何上传一张图片
+resp, err := http.Post("http://example.com/upload","image/jpeg",&imageDataBuf)
+if err != nil {
+  return 
+}
+if resp.StatusCode != http.StatusOK {
+  return
+}
+```
+
+##### http.PostForm( )
+
+http.PostFrom( )方法实现了标准编码格式为application/x-www-form-urlencoded的表单提交
+
+```go
+//下面的示例代码模拟HTML表单提交一篇新文章
+resp ,err := http.PostForm("http://example.com/posts", url.Values{"title": {*artice title}, "content":{"article body"}})
+if err != nil {
+  //处理错误
+  return
+}
+```
+

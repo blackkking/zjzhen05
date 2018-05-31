@@ -96,7 +96,7 @@ DROP CONSTRAINT constraint_name; --移除主键约束
 
 外键约束：
 
-外键约束可以保证使用外键约束的数据库列与所引用的主键约束的数据列一直，外键约束一个数据表可以有多个
+外键约束可以保证使用外键约束的数据库列与所引用的主键约束的数据列一致，外键约束一个数据表可以有多个
 
 ```sql
 CONSTRAINT constraint_name FOREIGN KEY (column_name)
@@ -794,17 +794,18 @@ variable_name datetype
 ];
 ```
 
-数值类型：
+#### 数值类型：
 
 - NUMBER类型可以表示整数和浮点数，十进制。格式NUMBER(precision,scale).precision表示精度，也就是位数，最多38位，scale表示小数点后的位数，例如NUMBER(3,1)可以储存-99.9~99.9之间的数
+- float 用来存储126位数据(二进制)
 - PLS_INTEGER和BINARY_INTENER类型通常可以认为是一样的类型，表示的是-2147483628~2147483647之间。不同是BINARY_INTENER 发生溢出时指派一个NUMBER类型而不发生异常，而PLS_INTEGER会发生异常
 - SIMPLE_INTEGER属于PLS_INTEGER的子类型，取值范围一样，只是改类型不允许为空。如果数据本身不需要溢出检查而且也不可能是空，可以选择该类型
 
 字符类型
 
 - CHAR类型，用来描述固定长度的字符串，最长为32 767个字节，默认为1，如果长度达不到会以空格补齐长度，CHAR(maximum_size).
-- VARCHAR类型 作为变量为32 767字节，但存储时最大4000个字节，该类型表示可以变的长度字符串，当没到定义的最大长度的时候不会补齐
-- NCHAR,NVARCHAR 与国家的字符集有关
+- VARCHAR2类型 作为变量为32 767字节，但存储时最大4000个字节，该类型表示可以变的长度字符串，当没到定义的最大长度的时候不会补齐
+- NCHAR,NVARCHAR2 与国家的字符集有关
 - LONG类型 可以变的方式存储数据，PL/SQL中该类型作为变量最长为32760字节的字符串，如果作为存储字段则可达2GB
 
 BOOL类型，不能定义表中的存储数据，可以用来存储逻辑上的值，它有3个值可以选：TRUE FALSE NULL

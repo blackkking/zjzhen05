@@ -134,7 +134,6 @@ fgets()函数从文件中读入一行以“\0”或 EOF 结尾的字符串。
 //字符串写入文件
 int fputs(const char *s, FILE *stream); 
 //成功返回非负数，失败返回EOF
-
 ```
 
 ```c

@@ -14,7 +14,7 @@ func quickSort(values []int, left, right int){
 			p = j					
 		}
 
-		if values[i] <= temp && i <= p{		//小于等于最左值且坐标小于（小于最左值的最大下标）		  		
+		for values[i] <= temp && i <= p{		//小于等于最左值且坐标小于（小于最左值的最大下标）		  		
 			i++						//i加一
 		}
 		if i <= p {

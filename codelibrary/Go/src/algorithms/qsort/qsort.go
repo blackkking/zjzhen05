@@ -9,12 +9,12 @@ func quickSort(values []int, left, right int){
 		for j >= p && values[j] >= temp {
 			j--
 		}
-		for j >= p {
+		if j >= p {
 			values[p] = values[j]
 			p = j
 		}
 
-		if values[i] <= temp && i <= p{
+		for values[i] <= temp && i <= p{
 			i++
 		}
 		if i <=p {
